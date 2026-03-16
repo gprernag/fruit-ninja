@@ -1,0 +1,72 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;       /* no scrollbars during game */
+    background: black;
+    touch-action: none;     /* stop mobile scroll/zoom on touch */
+}
+
+#gameCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* Mirror so finger movement feels natural (like a selfie camera) */
+    transform: scaleX(-1);
+}
+
+/* UI lives OUTSIDE the canvas — not affected by the canvas flip */
+#ui {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: white;
+    font-size: clamp(16px, 3vw, 28px); /* scales between 16px and 28px */
+    font-family: 'Arial Black', Arial, sans-serif;
+    font-weight: bold;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+}
+
+#lives {
+    font-size: clamp(18px, 3.5vw, 32px);
+    letter-spacing: 4px;
+}
+
+/* Restart button — shown on game over */
+#restartBtn {
+    position: absolute;
+    bottom: 28%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 16px 52px;
+    font-size: clamp(20px, 3vw, 30px);
+    font-weight: bold;
+    font-family: 'Arial Black', Arial, sans-serif;
+    background: #ffd700;
+    color: #111;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    z-index: 20;
+    box-shadow: 0 4px 24px rgba(255, 215, 0, 0.6);
+    transition: transform 0.15s, background 0.15s;
+    letter-spacing: 1px;
+}
+
+#restartBtn:hover {
+    background: #ffe84d;
+    transform: translateX(-50%) scale(1.07);
+}
+
+#restartBtn:active {
+    transform: translateX(-50%) scale(0.97);
+}
