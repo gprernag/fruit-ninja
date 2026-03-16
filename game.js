@@ -2,36 +2,44 @@
 //  SETUP
 // ─────────────────────────────────────────────
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const video = document.getElementById('webcam');
+const ctx    = canvas.getContext('2d');
+const video  = document.getElementById('webcam');
 
-canvas.width = window.innerWidth;
+canvas.width  = window.innerWidth;
 canvas.height = window.innerHeight;
 
 // ─────────────────────────────────────────────
 //  GAME STATE
 // ─────────────────────────────────────────────
-let gameState = 'waiting';   // 'waiting' | 'countdown' | 'playing' | 'gameover'
-let countdownValue = 3;
-let score = 0;
-let lives = 3;
-let spawnRate = 1;           // how many fruits per batch (increases over time)
-let spawnTimer = 0;
-let combo = 0;
+let gameState       = 'waiting';   // 'waiting' | 'countdown' | 'playing' | 'gameover'
+let countdownValue  = 3;
+let score           = 0;
+let lives           = 3;
+let spawnRate       = 1;
+let spawnTimer      = 0;
+let combo           = 0;
 let comboMultiplier = 1;
-let comboTimer = null;
-let gameOverPending = false;       // true during explosion delay before game over screen
+let comboTimer      = null;
+let gameOverPending = false;
 
 // ─────────────────────────────────────────────
 //  FINGER TRACKING
 // ─────────────────────────────────────────────
-let fingerTip = null;   // { x, y } in canvas pixels
-let fingerTrail = [];     // last 10 positions for swipe detection & trail
+let fingerTip   = null;
+let fingerTrail = [];
+
+// ─────────────────────────────────────────────
+//  VIDEO DRAW PARAMS (used for accurate finger mapping)
+// ─────────────────────────────────────────────
+let videoOffsetX    = 0;
+let videoOffsetY    = 0;
+let videoDrawWidth  = 0;
+let videoDrawHeight = 0;
 
 // ─────────────────────────────────────────────
 //  FRUITS & EFFECTS
 // ─────────────────────────────────────────────
-let fruits = [];
+let fruits       = [];
 let sliceEffects = [];
 
 const GRAVITY = 0.35;
@@ -88,23 +96,24 @@ function setupHandTracking() {
             const landmarks = results.multiHandLandmarks[0];
             const tip = landmarks[8]; // index fingertip is always #8
 
-            // tip.x / tip.y are 0–1 normalized → convert to canvas pixels
+            // Map normalized 0-1 coords through the SAME offset/scale
+            // that drawVideo uses — so dot sits exactly on finger
             fingerTip = {
-                x: tip.x * canvas.width,
-                y: tip.y * canvas.height
+                x: tip.x * videoDrawWidth  + videoOffsetX,
+                y: tip.y * videoDrawHeight + videoOffsetY
             };
 
             fingerTrail.push({ x: fingerTip.x, y: fingerTip.y });
             if (fingerTrail.length > 10) fingerTrail.shift();
 
-            // First time finger is seen → start countdown
+            // First time finger detected → start countdown
             if (gameState === 'waiting') {
                 gameState = 'countdown';
                 startCountdown();
             }
 
         } else {
-            fingerTip = null;
+            fingerTip   = null;
             fingerTrail = [];
         }
     });
@@ -122,24 +131,31 @@ function setupHandTracking() {
 
 // ─────────────────────────────────────────────
 //  DRAW VIDEO BACKGROUND (aspect-ratio safe)
+//  Also saves offset/size so finger mapping stays in sync
 // ─────────────────────────────────────────────
 function drawVideo() {
     if (!video.videoWidth) return;
 
-    const videoRatio = video.videoWidth / video.videoHeight;
+    const videoRatio  = video.videoWidth / video.videoHeight;
     const canvasRatio = canvas.width / canvas.height;
     let drawWidth, drawHeight, offsetX, offsetY;
 
     if (canvasRatio > videoRatio) {
-        drawWidth = canvas.width;
+        drawWidth  = canvas.width;
         drawHeight = canvas.width / videoRatio;
     } else {
         drawHeight = canvas.height;
-        drawWidth = canvas.height * videoRatio;
+        drawWidth  = canvas.height * videoRatio;
     }
 
-    offsetX = (canvas.width - drawWidth) / 2;
+    offsetX = (canvas.width  - drawWidth)  / 2;
     offsetY = (canvas.height - drawHeight) / 2;
+
+    // Save so hand tracking can use the same coordinate space
+    videoOffsetX    = offsetX;
+    videoOffsetY    = offsetY;
+    videoDrawWidth  = drawWidth;
+    videoDrawHeight = drawHeight;
 
     ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
 }
@@ -163,14 +179,14 @@ function drawCountdown() {
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
 
-    ctx.textAlign = 'center';
-    ctx.font = `bold ${canvas.width / 4}px Arial Black`;
-    ctx.fillStyle = 'white';
+    ctx.textAlign   = 'center';
+    ctx.font        = `bold ${canvas.width / 4}px Arial Black`;
+    ctx.fillStyle   = 'white';
     ctx.globalAlpha = 0.85;
     ctx.shadowColor = '#ffd700';
-    ctx.shadowBlur = 40;
+    ctx.shadowBlur  = 40;
     ctx.fillText(countdownValue, canvas.width / 2, canvas.height / 2 + 40);
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur  = 0;
     ctx.globalAlpha = 1.0;
 
     ctx.restore();
@@ -190,20 +206,20 @@ function drawWaitingScreen() {
     ctx.textAlign = 'center';
 
     // Title
-    ctx.font = `bold ${canvas.width / 9}px Arial Black`;
-    ctx.fillStyle = '#ffd700';
+    ctx.font        = `bold ${canvas.width / 9}px Arial Black`;
+    ctx.fillStyle   = '#ffd700';
     ctx.shadowColor = 'rgba(255,200,0,0.5)';
-    ctx.shadowBlur = 30;
+    ctx.shadowBlur  = 30;
     ctx.fillText('🍉 FRUIT NINJA', canvas.width / 2, canvas.height / 2 - 90);
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur  = 0;
 
     // Subtitle
-    ctx.font = `${canvas.width / 26}px Arial`;
+    ctx.font      = `${canvas.width / 26}px Arial`;
     ctx.fillStyle = 'white';
     ctx.fillText('Show your index finger to start', canvas.width / 2, canvas.height / 2 + 10);
 
     // Instructions
-    ctx.font = `${canvas.width / 38}px Arial`;
+    ctx.font      = `${canvas.width / 38}px Arial`;
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.fillText('Slice fruits  •  Avoid 💣 bombs  •  3 lives', canvas.width / 2, canvas.height / 2 + 70);
 
@@ -215,22 +231,22 @@ function drawWaitingScreen() {
 // ─────────────────────────────────────────────
 function spawnFruit() {
     const isBomb = Math.random() < 0.15;
-    const type = FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
-    const x = 150 + Math.random() * (canvas.width - 300);
+    const type   = FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
+    const x      = 150 + Math.random() * (canvas.width - 300);
 
     // canvas.height / 43 → fruit reaches ~65–70% of screen height
     const baseUp = canvas.height / 43;
 
     fruits.push({
         x,
-        y: canvas.height + 60,
-        vx: (Math.random() - 0.5) * 2,
-        vy: -(baseUp + Math.random() * 2),
-        radius: isBomb ? 38 * scale : type.radius,
-        emoji: isBomb ? '💣' : type.emoji,
+        y:             canvas.height + 60,
+        vx:            (Math.random() - 0.5) * 2,
+        vy:            -(baseUp + Math.random() * 2),
+        radius:        isBomb ? 38 * scale : type.radius,
+        emoji:         isBomb ? '💣' : type.emoji,
         isBomb,
-        sliced: false,
-        rotation: 0,
+        sliced:        false,
+        rotation:      0,
         rotationSpeed: (Math.random() - 0.5) * 0.05,
     });
 }
@@ -239,7 +255,6 @@ function spawnFruit() {
 //  UPDATE FRUITS (physics + spawn timer)
 // ─────────────────────────────────────────────
 function updateFruits() {
-    // Stop spawning new fruits during explosion delay
     if (!gameOverPending) {
         spawnTimer++;
         const spawnInterval = 90;
@@ -254,9 +269,9 @@ function updateFruits() {
 
     fruits.forEach(fruit => {
         if (fruit.sliced) return;
-        fruit.vy += GRAVITY;
-        fruit.x += fruit.vx;
-        fruit.y += fruit.vy;
+        fruit.vy       += GRAVITY;
+        fruit.x        += fruit.vx;
+        fruit.y        += fruit.vy;
         fruit.rotation += fruit.rotationSpeed;
     });
 
@@ -273,8 +288,8 @@ function drawFruits() {
         ctx.save();
         ctx.translate(fruit.x, fruit.y);
         ctx.rotate(fruit.rotation);
-        ctx.font = `${fruit.radius * 2}px serif`;
-        ctx.textAlign = 'center';
+        ctx.font         = `${fruit.radius * 2}px serif`;
+        ctx.textAlign    = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(fruit.emoji, 0, 0);
         ctx.restore();
@@ -311,7 +326,6 @@ function lineIntersectsCircle(x1, y1, x2, y2, cx, cy, radius) {
     const t1 = (-b - sqrtDisc) / (2 * a);
     const t2 = (-b + sqrtDisc) / (2 * a);
 
-    // t must be 0–1: ON the segment, not its infinite extension
     if (t1 >= 0 && t1 <= 1) return true;
     if (t2 >= 0 && t2 <= 1) return true;
     return false;
@@ -321,7 +335,7 @@ function lineIntersectsCircle(x1, y1, x2, y2, cx, cy, radius) {
 //  CHECK SLICES
 // ─────────────────────────────────────────────
 function checkSlices() {
-    if (gameOverPending) return;   // no slicing during explosion delay
+    if (gameOverPending) return;
     if (getSwipeSpeed() < 15) return;
     if (fingerTrail.length < 2) return;
 
@@ -345,20 +359,17 @@ function triggerSlice(fruit) {
     const speed = getSwipeSpeed();
 
     if (speed > 25) {
-        // Fast slice — build the chain
         combo++;
         if (comboTimer) clearTimeout(comboTimer);
         comboTimer = setTimeout(() => {
             combo = 0;
         }, 300);
     } else {
-        // Slow slice — break chain completely, start fresh
         if (comboTimer) clearTimeout(comboTimer);
         comboTimer = null;
-        combo = 0;   // ✅ reset to 0 not 1
+        combo = 0;
     }
 
-    // Multiplier based on combo
     if      (combo >= 5) comboMultiplier = 4;
     else if (combo >= 3) comboMultiplier = 3;
     else if (combo >= 2) comboMultiplier = 2;
@@ -368,7 +379,7 @@ function triggerSlice(fruit) {
     score += points;
     updateScoreUI();
 
-    // Only show combo text from 2nd fast slice onward
+    // Combo text — only from 2nd fast slice onward
     if (combo >= 2) {
         sliceEffects.push({
             x: fruit.x, y: fruit.y - 50,
@@ -378,9 +389,9 @@ function triggerSlice(fruit) {
         });
     }
 
-    // Juice particles
+    // Juice particles — 8 directions
     for (let i = 0; i < 8; i++) {
-        const angle = (Math.PI * 2 / 8) * i;
+        const angle  = (Math.PI * 2 / 8) * i;
         const speed2 = 2 + Math.random() * 3;
         sliceEffects.push({
             x: fruit.x, y: fruit.y,
@@ -424,20 +435,19 @@ function triggerBomb(bomb) {
     if (lives <= 0) {
         gameOverPending = true;
 
-        // Store bomb position for the mega explosion
         const bx = bomb.x;
         const by = bomb.y;
 
-        // Wave 1 — immediate, expands to fill screen
+        // Wave 1 — immediate
         sliceEffects.push({
             x: bx, y: by,
             radius: 10,
-            maxRadius: Math.hypot(canvas.width, canvas.height), // diagonal = full screen
+            maxRadius: Math.hypot(canvas.width, canvas.height),
             alpha: 1.0,
             type: 'megaExplosion'
         });
 
-        // Wave 2 — slightly delayed
+        // Wave 2 — 150ms later
         setTimeout(() => {
             sliceEffects.push({
                 x: bx, y: by,
@@ -448,7 +458,7 @@ function triggerBomb(bomb) {
             });
         }, 150);
 
-        // Wave 3
+        // Wave 3 — 300ms later
         setTimeout(() => {
             sliceEffects.push({
                 x: bx, y: by,
@@ -459,29 +469,33 @@ function triggerBomb(bomb) {
             });
         }, 300);
 
-        // After waves fill screen → blinding white pressure flash
+        // Blinding white flash — like pressure on eyes
         setTimeout(() => {
             sliceEffects.push({
-                alpha: 1.0,          // starts fully white
-                fadeSpeed: 0.003,    // fades very slowly — like eyes recovering
+                alpha: 1.0,
+                fadeSpeed: 0.003,
                 type: 'blindFlash'
             });
         }, 600);
 
-        // Game over screen appears AFTER the white fades a bit
+        // Game over while white still covering screen
         setTimeout(() => {
             endGame();
         }, 1000);
 
     } else {
-        // Normal bomb (not last life) — regular explosion
+        // Normal bomb — regular explosion
         sliceEffects.push({
             x: bomb.x, y: bomb.y,
             radius: 10, alpha: 1.0,
             type: 'explosion'
         });
         setTimeout(() => {
-            sliceEffects.push({ x: bomb.x, y: bomb.y, radius: 10, alpha: 0.7, type: 'explosion' });
+            sliceEffects.push({
+                x: bomb.x, y: bomb.y,
+                radius: 10, alpha: 0.7,
+                type: 'explosion'
+            });
         }, 200);
         sliceEffects.push({ alpha: 0.6, type: 'flash' });
         setTimeout(() => {
@@ -496,28 +510,26 @@ function triggerBomb(bomb) {
 function updateSliceEffects() {
     sliceEffects.forEach(e => {
         if (e.type === 'juice') {
-            e.x += e.vx;
-            e.y += e.vy;
-            e.vy += 0.2;
+            e.x     += e.vx;
+            e.y     += e.vy;
+            e.vy    += 0.2;
             e.alpha -= 0.03;
         } else if (e.type === 'explosion') {
-            e.radius += 8;     // fast expansion
-            e.alpha -= 0.02;  // slow fade for dramatic effect
+            e.radius += 8;
+            e.alpha  -= 0.02;
         } else if (e.type === 'flash') {
             e.alpha -= 0.04;
         } else if (e.type === 'text') {
-            e.y += e.vy;
+            e.y     += e.vy;
             e.alpha -= 0.02;
         } else if (e.type === 'megaExplosion') {
-            e.radius += 35;   // expands very fast to fill screen quickly
-            // Only start fading once it's filled the screen
+            e.radius += 35;
             if (e.radius > e.maxRadius * 0.85) {
                 e.alpha -= 0.04;
             }
         } else if (e.type === 'blindFlash') {
-            e.alpha -= e.fadeSpeed;  // very slow fade — eyes recovering from blast
+            e.alpha -= e.fadeSpeed;
         }
-
     });
 
     sliceEffects = sliceEffects.filter(e => e.alpha > 0);
@@ -533,23 +545,20 @@ function drawSliceEffects() {
             ctx.globalAlpha = effect.alpha;
             ctx.beginPath();
             ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
-            ctx.fillStyle = effect.color;
+            ctx.fillStyle   = effect.color;
             ctx.fill();
             ctx.globalAlpha = 1.0;
 
         } else if (effect.type === 'explosion') {
             ctx.globalAlpha = effect.alpha;
-            // Outer orange
             ctx.beginPath();
             ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
             ctx.fillStyle = '#ff6600';
             ctx.fill();
-            // Middle ring
             ctx.beginPath();
             ctx.arc(effect.x, effect.y, effect.radius * 0.65, 0, Math.PI * 2);
             ctx.fillStyle = '#ff9900';
             ctx.fill();
-            // Inner yellow core
             ctx.beginPath();
             ctx.arc(effect.x, effect.y, effect.radius * 0.35, 0, Math.PI * 2);
             ctx.fillStyle = '#ffff00';
@@ -558,39 +567,35 @@ function drawSliceEffects() {
 
         } else if (effect.type === 'flash') {
             ctx.globalAlpha = effect.alpha;
-            ctx.fillStyle = 'white';
+            ctx.fillStyle   = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.globalAlpha = 1.0;
 
         } else if (effect.type === 'text') {
-            // Counter-flip so text is readable (canvas CSS is scaleX(-1))
             ctx.save();
             ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
             ctx.globalAlpha = effect.alpha;
-            ctx.font = `bold ${effect.size || 36}px Arial Black`;
-            ctx.fillStyle = effect.color || 'white';
-            ctx.textAlign = 'center';
+            ctx.font        = `bold ${effect.size || 36}px Arial Black`;
+            ctx.fillStyle   = effect.color || 'white';
+            ctx.textAlign   = 'center';
             ctx.shadowColor = 'rgba(0,0,0,0.6)';
-            ctx.shadowBlur = 6;
-            // Mirror x to compensate for the flip
+            ctx.shadowBlur  = 6;
             ctx.fillText(effect.text, canvas.width - effect.x, effect.y);
-            ctx.shadowBlur = 0;
+            ctx.shadowBlur  = 0;
             ctx.globalAlpha = 1.0;
             ctx.restore();
+
         } else if (effect.type === 'megaExplosion') {
             ctx.globalAlpha = effect.alpha;
-
-            // Layered rings — orange outside, yellow inside, white hot core
-            const gradient = ctx.createRadialGradient(
+            const gradient  = ctx.createRadialGradient(
                 effect.x, effect.y, effect.radius * 0.3,
                 effect.x, effect.y, effect.radius
             );
-            gradient.addColorStop(0, 'rgba(255, 255, 200, 1)');  // white-yellow hot core
-            gradient.addColorStop(0.4, 'rgba(255, 200, 0,   1)');  // yellow
-            gradient.addColorStop(0.7, 'rgba(255, 80,  0,   1)');  // orange
-            gradient.addColorStop(1, 'rgba(180, 0,   0,   0)');  // red fading to transparent
-
+            gradient.addColorStop(0,   'rgba(255, 255, 200, 1)');
+            gradient.addColorStop(0.4, 'rgba(255, 200, 0,   1)');
+            gradient.addColorStop(0.7, 'rgba(255, 80,  0,   1)');
+            gradient.addColorStop(1,   'rgba(180, 0,   0,   0)');
             ctx.beginPath();
             ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
             ctx.fillStyle = gradient;
@@ -598,13 +603,11 @@ function drawSliceEffects() {
             ctx.globalAlpha = 1.0;
 
         } else if (effect.type === 'blindFlash') {
-            // Pure white covering entire screen — like pressure on your eyes
             ctx.globalAlpha = effect.alpha;
-            ctx.fillStyle = 'white';
+            ctx.fillStyle   = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.globalAlpha = 1.0;
         }
-
     });
 }
 
@@ -618,24 +621,21 @@ function drawFingerTrail() {
 
     for (let i = 1; i < fingerTrail.length; i++) {
         const alpha = i / fingerTrail.length;
-
-        // White when slow → orange/yellow when fast swipe
-        const r = 255;
-        const g = speed > 30 ? 180 : 255;
-        const b = speed > 30 ? 0 : 255;
+        const r     = 255;
+        const g     = speed > 30 ? 180 : 255;
+        const b     = speed > 30 ? 0   : 255;
 
         ctx.beginPath();
         ctx.moveTo(fingerTrail[i - 1].x, fingerTrail[i - 1].y);
-        ctx.lineTo(fingerTrail[i].x, fingerTrail[i].y);
+        ctx.lineTo(fingerTrail[i].x,     fingerTrail[i].y);
         ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        ctx.lineWidth = 6 * alpha;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+        ctx.lineWidth   = 6 * alpha;
+        ctx.lineCap     = 'round';
+        ctx.lineJoin    = 'round';
         ctx.stroke();
     }
 
     if (fingerTip) {
-        // Soft glow halo
         const gradient = ctx.createRadialGradient(
             fingerTip.x, fingerTip.y, 0,
             fingerTip.x, fingerTip.y, 22
@@ -648,7 +648,6 @@ function drawFingerTrail() {
         ctx.fillStyle = gradient;
         ctx.fill();
 
-        // Solid inner dot
         ctx.beginPath();
         ctx.arc(fingerTip.x, fingerTip.y, 6, 0, Math.PI * 2);
         ctx.fillStyle = 'white';
@@ -677,35 +676,33 @@ function endGame() {
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
 
-    // Dark overlay
     ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.textAlign = 'center';
 
-    // GAME OVER
-    ctx.font = `bold ${canvas.width / 9}px Arial Black`;
-    ctx.fillStyle = '#ff4444';
+    // GAME OVER — 35% from top
+    ctx.font        = `bold ${canvas.width / 9}px Arial Black`;
+    ctx.fillStyle   = '#ff4444';
     ctx.shadowColor = 'rgba(255,50,50,0.6)';
-    ctx.shadowBlur = 35;
-    ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 80);
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur  = 35;
+    ctx.fillText('GAME OVER', canvas.width / 2, canvas.height * 0.35);
+    ctx.shadowBlur  = 0;
 
-    // Score
-    ctx.font = `bold ${canvas.width / 16}px Arial`;
+    // Score — 48% from top
+    ctx.font      = `bold ${canvas.width / 16}px Arial`;
     ctx.fillStyle = '#ffd700';
-    ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 10);
+    ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height * 0.48);
 
-    // High score
+    // Best score — 57% from top
     const highScore = Math.max(score, parseInt(localStorage.getItem('highScore') || 0));
     localStorage.setItem('highScore', highScore);
-    ctx.font = `${canvas.width / 28}px Arial`;
+    ctx.font      = `${canvas.width / 28}px Arial`;
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText(`Best: ${highScore}`, canvas.width / 2, canvas.height / 2 + 70);
+    ctx.fillText(`Best: ${highScore}`, canvas.width / 2, canvas.height * 0.57);
 
     ctx.restore();
 
-    // Show restart button
     document.getElementById('restartBtn').style.display = 'block';
 }
 
@@ -713,16 +710,16 @@ function endGame() {
 //  RESTART
 // ─────────────────────────────────────────────
 document.getElementById('restartBtn').addEventListener('click', () => {
-    score = 0;
-    lives = 3;
-    fruits = [];
-    sliceEffects = [];
-    spawnTimer = 0;
-    spawnRate = 1;
-    combo = 0;
+    score           = 0;
+    lives           = 3;
+    fruits          = [];
+    sliceEffects    = [];
+    spawnTimer      = 0;
+    spawnRate       = 1;
+    combo           = 0;
     comboMultiplier = 1;
     gameOverPending = false;
-    gameState = 'waiting';
+    gameState       = 'waiting';
 
     updateScoreUI();
     updateLivesUI();
@@ -753,13 +750,12 @@ function gameLoop() {
         drawFingerTrail();
 
     } else if (gameState === 'gameover') {
-        // Keep animating so explosion finishes before overlay
         updateSliceEffects();
         drawFruits();
         drawSliceEffects();
         drawFingerTrail();
         endGame();
-        return; // stop rAF
+        return;
     }
 
     requestAnimationFrame(gameLoop);
@@ -779,7 +775,7 @@ setInterval(() => {
 //  RESIZE HANDLER
 // ─────────────────────────────────────────────
 window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
+    canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
 
     scale = Math.min(canvas.width, canvas.height) / 600;
