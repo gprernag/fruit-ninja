@@ -33,6 +33,14 @@ html, body {
     gap: 6px;
     text-shadow: 0 2px 8px rgba(0,0,0,0.8);
 }
+#my-name{
+     color: rgb(214, 211, 211);
+     position: absolute;
+     bottom: 20px;
+     left: 20px;
+     font-size: clamp(16px, 3vw, 28px); /* scales between 16px and 28px */
+    
+}
 
 #lives {
     font-size: clamp(18px, 3.5vw, 32px);
